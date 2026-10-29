@@ -16,441 +16,103 @@
       font-family: Arial, sans-serif;
       background: #0f172a;
       color: white;
-      padding: 20px;
       display: grid;
       place-items: center;
+      padding: 20px;
     }
 
     .container {
       width: 100%;
-      max-width: 500px;
+      max-width: 420px;
       background: #1e293b;
-      padding: 25px;
-      border-radius: 18px;
+      padding: 30px;
+      border-radius: 20px;
+      text-align: center;
       border: 1px solid #334155;
     }
 
-    h1 { color: #38bdf8; text-align: center; }
+    h1 { color: #38bdf8; }
 
-    p { color: #cbd5e1; text-align: center; }
-
-    input {
-      width: 100%;
-      padding: 13px;
-      margin: 7px 0;
-      border-radius: 9px;
-      border: 1px solid #475569;
-      background: #0f172a;
-      color: white;
-      font-size: 15px;
-    }
+    p { color: #cbd5e1; line-height: 1.6; }
 
     button {
-      padding: 12px;
-      border: none;
-      border-radius: 9px;
       background: #0ea5e9;
       color: white;
+      border: none;
+      padding: 13px 25px;
+      border-radius: 10px;
       font-size: 15px;
       cursor: pointer;
-      margin-top: 8px;
+      margin-top: 15px;
     }
-
-    button:disabled { opacity: .5; }
-
-    .full { width: 100%; }
-
-    .secondary { background: #475569; }
-
-    #chatSection { display: none; }
-
-    #messages {
-      height: 350px;
-      overflow-y: auto;
-      background: #0f172a;
-      border-radius: 12px;
-      padding: 12px;
-      margin: 15px 0;
-    }
-
-    .message {
-      background: #334155;
-      padding: 10px;
-      border-radius: 10px;
-      margin-bottom: 10px;
-      overflow-wrap: anywhere;
-    }
-
-    .message strong { color: #38bdf8; }
-
-    .message small {
-      display: block;
-      color: #94a3b8;
-      margin-top: 5px;
-    }
-
-    .chat-input {
-      display: flex;
-      gap: 8px;
-    }
-
-    .chat-input input { flex: 1; min-width: 0; }
 
     #status {
-      font-size: 13px;
-      color: #94a3b8;
+      overflow-wrap: anywhere;
+      font-size: 14px;
     }
-
-    .hidden { display: none; }
   </style>
 </head>
 
 <body>
 
-<div class="container">
+  <div class="container">
+    <h1>Ruang Mengobrol</h1>
+    <p>Tempat ngobrol bersama teman secara realtime.</p>
 
-  <h1>Ruang Mengobrol</h1>
-  <p>Tempat ngobrol bersama teman secara realtime.</p>
+    <p id="status">Menghubungkan ke Supabase...</p>
 
-  <p id="status">Menghubungkan ke server...</p>
-
-  <!-- LOGIN -->
-  <div id="authSection">
-
-    <input id="name" type="text"
-      placeholder="Nama kamu (untuk registrasi)">
-
-    <input id="email" type="email"
-      placeholder="Email">
-
-    <input id="password" type="password"
-      placeholder="Password (minimal 6 karakter)">
-
-    <button class="full" id="registerBtn">
-      Daftar Akun
+    <button onclick="testConnection()">
+      Tes Koneksi Database
     </button>
-
-    <button class="full secondary" id="loginBtn">
-      Login
-    </button>
-
   </div>
 
-  <!-- CHAT -->
-  <div id="chatSection">
+  <script>
+    // KONFIGURASI SUPABASE
+    const SUPABASE_URL =
+      "https://mtkojgwrcppxhoaudqze.supabase.co";
 
-    <p id="welcome"></p>
+    const SUPABASE_KEY =
+      "sb_publishable_IepBmSaRF_0CwQSOGn4Anw_gd3KHLE5";
 
-    <div id="messages"></div>
+    // MEMBUAT KONEKSI
+    const db = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
 
-    <form id="chatForm" class="chat-input">
-      <input id="messageInput"
-        type="text"
-        placeholder="Tulis pesan..."
-        autocomplete="off"
-        required>
+    const statusElement = document.getElementById("status");
 
-      <button type="submit">Kirim</button>
-    </form>
+    // TES KONEKSI DATABASE
+    async function testConnection() {
+      statusElement.textContent = "Sedang mengetes koneksi...";
 
-    <button id="logoutBtn"
-      class="full secondary">
-      Keluar
-    </button>
+      try {
+        const { data, error } = await db
+          .from("rooms")
+          .select("id")
+          .limit(1);
 
-  </div>
-
-</div>
-
-<script>
-  // =================================
-  // SUPABASE CONFIGURATION
-  // =================================
-
-  const SUPABASE_URL =
-    "https://mtkojgwrcppxhoaudqze.supabase.co";
-
-  const SUPABASE_KEY =
-    "MASUKKAN_PUBLISHABLE_KEY_DI_SINI";
-
-  const db = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-  );
-
-  // =================================
-  // ELEMENTS
-  // =================================
-
-  const statusText = document.getElementById("status");
-  const authSection = document.getElementById("authSection");
-  const chatSection = document.getElementById("chatSection");
-  const messagesBox = document.getElementById("messages");
-
-  let currentUser = null;
-  let realtimeChannel = null;
-
-  function setStatus(text) {
-    statusText.textContent = text;
-  }
-
-  function showChat(user) {
-    currentUser = user;
-    authSection.style.display = "none";
-    chatSection.style.display = "block";
-
-    const displayName =
-      user.user_metadata?.display_name ||
-      user.email.split("@")[0];
-
-    document.getElementById("welcome").textContent =
-      "Halo, " + displayName + "!";
-
-    loadMessages();
-    subscribeMessages();
-
-    setStatus("Terhubung ke Ruang Mengobrol");
-  }
-
-  // =================================
-  // REGISTER
-  // =================================
-
-  document.getElementById("registerBtn")
-    .addEventListener("click", async () => {
-
-      const name = document.getElementById("name").value.trim();
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-
-      if (!name || !email || password.length < 6) {
-        alert("Isi nama, email, dan password minimal 6 karakter.");
-        return;
-      }
-
-      setStatus("Mendaftarkan akun...");
-
-      const { data, error } = await db.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { display_name: name }
+        if (error) {
+          statusElement.textContent =
+            "Koneksi/API merespons, tetapi query gagal: " +
+            error.message;
+          console.error(error);
+          return;
         }
-      });
 
-      if (error) {
-        alert(error.message);
-        setStatus("Registrasi gagal");
-        return;
+        statusElement.textContent =
+          "Berhasil! Database Supabase terhubung.";
+
+      } catch (error) {
+        statusElement.textContent =
+          "Gagal terhubung: " + error.message;
+        console.error(error);
       }
-
-      if (data.session) {
-        showChat(data.user);
-      } else {
-        alert("Pendaftaran berhasil. Silakan cek email jika konfirmasi diperlukan, lalu login.");
-        setStatus("Silakan login");
-      }
-    });
-
-  // =================================
-  // LOGIN
-  // =================================
-
-  document.getElementById("loginBtn")
-    .addEventListener("click", async () => {
-
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-
-      if (!email || !password) {
-        alert("Masukkan email dan password.");
-        return;
-      }
-
-      setStatus("Login...");
-
-      const { data, error } = await db.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) {
-        alert(error.message);
-        setStatus("Login gagal");
-        return;
-      }
-
-      showChat(data.user);
-    });
-
-  // =================================
-  // LOAD CHAT HISTORY
-  // =================================
-
-  async function loadMessages() {
-
-    const { data, error } = await db
-      .from("chat_messages")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .limit(100);
-
-    if (error) {
-      setStatus("Gagal memuat pesan: " + error.message);
-      return;
     }
 
-    messagesBox.replaceChildren();
-
-    data.forEach(addMessage);
-
-    scrollToBottom();
-  }
-
-  // =================================
-  // DISPLAY MESSAGE
-  // =================================
-
-  function addMessage(msg) {
-
-    const item = document.createElement("div");
-    item.className = "message";
-
-    const name = document.createElement("strong");
-    name.textContent = msg.username;
-
-    const content = document.createElement("div");
-    content.textContent = msg.content;
-
-    const time = document.createElement("small");
-    time.textContent = new Date(msg.created_at)
-      .toLocaleString("id-ID");
-
-    item.append(name, content, time);
-    messagesBox.appendChild(item);
-  }
-
-  function scrollToBottom() {
-    messagesBox.scrollTop = messagesBox.scrollHeight;
-  }
-
-  // =================================
-  // SEND MESSAGE
-  // =================================
-
-  document.getElementById("chatForm")
-    .addEventListener("submit", async (event) => {
-
-      event.preventDefault();
-
-      const input = document.getElementById("messageInput");
-      const content = input.value.trim();
-
-      if (!content || !currentUser) return;
-
-      input.disabled = true;
-
-      const username =
-        currentUser.user_metadata?.display_name ||
-        currentUser.email.split("@")[0];
-
-      const { error } = await db
-        .from("chat_messages")
-        .insert({
-          user_id: currentUser.id,
-          username,
-          content
-        });
-
-      input.disabled = false;
-
-      if (error) {
-        alert("Pesan gagal dikirim: " + error.message);
-        return;
-      }
-
-      input.value = "";
-      input.focus();
-    });
-
-  // =================================
-  // REALTIME
-  // =================================
-
-  function subscribeMessages() {
-
-    if (realtimeChannel) {
-      db.removeChannel(realtimeChannel);
-    }
-
-    realtimeChannel = db
-      .channel("public-chat")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "chat_messages"
-        },
-        (payload) => {
-          addMessage(payload.new);
-          scrollToBottom();
-        }
-      )
-      .subscribe();
-  }
-
-  // =================================
-  // LOGOUT
-  // =================================
-
-  document.getElementById("logoutBtn")
-    .addEventListener("click", async () => {
-
-      if (realtimeChannel) {
-        await db.removeChannel(realtimeChannel);
-        realtimeChannel = null;
-      }
-
-      await db.auth.signOut();
-
-      currentUser = null;
-      messagesBox.replaceChildren();
-
-      chatSection.style.display = "none";
-      authSection.style.display = "block";
-
-      setStatus("Kamu sudah keluar");
-    });
-
-  // =================================
-  // CHECK EXISTING SESSION
-  // =================================
-
-  async function initialize() {
-
-    if (SUPABASE_KEY === "sb_publishable_IepBmSaRF_0CwQSOGn4Anw_gd3KHLE5") {
-      setStatus("Masukkan Publishable Key terlebih dahulu.");
-      return;
-    }
-
-    const { data, error } = await db.auth.getSession();
-
-    if (error) {
-      setStatus("Gagal menghubungkan: " + error.message);
-      return;
-    }
-
-    if (data.session) {
-      showChat(data.session.user);
-    } else {
-      setStatus("Siap! Silakan daftar atau login.");
-    }
-  }
-
-  initialize();
-
-</script>
+    // TES OTOMATIS SAAT HALAMAN DIBUKA
+    testConnection();
+  </script>
 
 </body>
 </html>
