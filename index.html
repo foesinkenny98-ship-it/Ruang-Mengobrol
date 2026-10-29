@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ruang Mengobrol</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -15,53 +16,441 @@
       font-family: Arial, sans-serif;
       background: #0f172a;
       color: white;
+      padding: 20px;
       display: grid;
       place-items: center;
-      padding: 20px;
     }
 
     .container {
       width: 100%;
-      max-width: 420px;
+      max-width: 500px;
       background: #1e293b;
-      padding: 30px;
-      border-radius: 20px;
-      text-align: center;
+      padding: 25px;
+      border-radius: 18px;
       border: 1px solid #334155;
     }
 
-    h1 {
-      margin-bottom: 10px;
-      color: #38bdf8;
-    }
+    h1 { color: #38bdf8; text-align: center; }
 
-    p {
-      color: #cbd5e1;
-      line-height: 1.6;
+    p { color: #cbd5e1; text-align: center; }
+
+    input {
+      width: 100%;
+      padding: 13px;
+      margin: 7px 0;
+      border-radius: 9px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: white;
+      font-size: 15px;
     }
 
     button {
+      padding: 12px;
+      border: none;
+      border-radius: 9px;
       background: #0ea5e9;
       color: white;
-      border: none;
-      padding: 13px 25px;
-      border-radius: 10px;
       font-size: 15px;
       cursor: pointer;
-      margin-top: 15px;
+      margin-top: 8px;
     }
+
+    button:disabled { opacity: .5; }
+
+    .full { width: 100%; }
+
+    .secondary { background: #475569; }
+
+    #chatSection { display: none; }
+
+    #messages {
+      height: 350px;
+      overflow-y: auto;
+      background: #0f172a;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 15px 0;
+    }
+
+    .message {
+      background: #334155;
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      overflow-wrap: anywhere;
+    }
+
+    .message strong { color: #38bdf8; }
+
+    .message small {
+      display: block;
+      color: #94a3b8;
+      margin-top: 5px;
+    }
+
+    .chat-input {
+      display: flex;
+      gap: 8px;
+    }
+
+    .chat-input input { flex: 1; min-width: 0; }
+
+    #status {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .hidden { display: none; }
   </style>
 </head>
+
 <body>
 
-  <div class="container">
-    <h1>Ruang Mengobrol</h1>
-    <p>Tempat ngobrol bersama teman secara realtime.</p>
-    <p id="status">Aplikasi sedang disiapkan...</p>
-    <button onclick="alert('Selamat datang di Ruang Mengobrol!')">
-      Mulai Mengobrol
+<div class="container">
+
+  <h1>Ruang Mengobrol</h1>
+  <p>Tempat ngobrol bersama teman secara realtime.</p>
+
+  <p id="status">Menghubungkan ke server...</p>
+
+  <!-- LOGIN -->
+  <div id="authSection">
+
+    <input id="name" type="text"
+      placeholder="Nama kamu (untuk registrasi)">
+
+    <input id="email" type="email"
+      placeholder="Email">
+
+    <input id="password" type="password"
+      placeholder="Password (minimal 6 karakter)">
+
+    <button class="full" id="registerBtn">
+      Daftar Akun
     </button>
+
+    <button class="full secondary" id="loginBtn">
+      Login
+    </button>
+
   </div>
+
+  <!-- CHAT -->
+  <div id="chatSection">
+
+    <p id="welcome"></p>
+
+    <div id="messages"></div>
+
+    <form id="chatForm" class="chat-input">
+      <input id="messageInput"
+        type="text"
+        placeholder="Tulis pesan..."
+        autocomplete="off"
+        required>
+
+      <button type="submit">Kirim</button>
+    </form>
+
+    <button id="logoutBtn"
+      class="full secondary">
+      Keluar
+    </button>
+
+  </div>
+
+</div>
+
+<script>
+  // =================================
+  // SUPABASE CONFIGURATION
+  // =================================
+
+  const SUPABASE_URL =
+    "https://mtkojgwrcppxhoaudqze.supabase.co";
+
+  const SUPABASE_KEY =
+    "MASUKKAN_PUBLISHABLE_KEY_DI_SINI";
+
+  const db = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+  );
+
+  // =================================
+  // ELEMENTS
+  // =================================
+
+  const statusText = document.getElementById("status");
+  const authSection = document.getElementById("authSection");
+  const chatSection = document.getElementById("chatSection");
+  const messagesBox = document.getElementById("messages");
+
+  let currentUser = null;
+  let realtimeChannel = null;
+
+  function setStatus(text) {
+    statusText.textContent = text;
+  }
+
+  function showChat(user) {
+    currentUser = user;
+    authSection.style.display = "none";
+    chatSection.style.display = "block";
+
+    const displayName =
+      user.user_metadata?.display_name ||
+      user.email.split("@")[0];
+
+    document.getElementById("welcome").textContent =
+      "Halo, " + displayName + "!";
+
+    loadMessages();
+    subscribeMessages();
+
+    setStatus("Terhubung ke Ruang Mengobrol");
+  }
+
+  // =================================
+  // REGISTER
+  // =================================
+
+  document.getElementById("registerBtn")
+    .addEventListener("click", async () => {
+
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      if (!name || !email || password.length < 6) {
+        alert("Isi nama, email, dan password minimal 6 karakter.");
+        return;
+      }
+
+      setStatus("Mendaftarkan akun...");
+
+      const { data, error } = await db.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { display_name: name }
+        }
+      });
+
+      if (error) {
+        alert(error.message);
+        setStatus("Registrasi gagal");
+        return;
+      }
+
+      if (data.session) {
+        showChat(data.user);
+      } else {
+        alert("Pendaftaran berhasil. Silakan cek email jika konfirmasi diperlukan, lalu login.");
+        setStatus("Silakan login");
+      }
+    });
+
+  // =================================
+  // LOGIN
+  // =================================
+
+  document.getElementById("loginBtn")
+    .addEventListener("click", async () => {
+
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      if (!email || !password) {
+        alert("Masukkan email dan password.");
+        return;
+      }
+
+      setStatus("Login...");
+
+      const { data, error } = await db.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        alert(error.message);
+        setStatus("Login gagal");
+        return;
+      }
+
+      showChat(data.user);
+    });
+
+  // =================================
+  // LOAD CHAT HISTORY
+  // =================================
+
+  async function loadMessages() {
+
+    const { data, error } = await db
+      .from("chat_messages")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .limit(100);
+
+    if (error) {
+      setStatus("Gagal memuat pesan: " + error.message);
+      return;
+    }
+
+    messagesBox.replaceChildren();
+
+    data.forEach(addMessage);
+
+    scrollToBottom();
+  }
+
+  // =================================
+  // DISPLAY MESSAGE
+  // =================================
+
+  function addMessage(msg) {
+
+    const item = document.createElement("div");
+    item.className = "message";
+
+    const name = document.createElement("strong");
+    name.textContent = msg.username;
+
+    const content = document.createElement("div");
+    content.textContent = msg.content;
+
+    const time = document.createElement("small");
+    time.textContent = new Date(msg.created_at)
+      .toLocaleString("id-ID");
+
+    item.append(name, content, time);
+    messagesBox.appendChild(item);
+  }
+
+  function scrollToBottom() {
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+  }
+
+  // =================================
+  // SEND MESSAGE
+  // =================================
+
+  document.getElementById("chatForm")
+    .addEventListener("submit", async (event) => {
+
+      event.preventDefault();
+
+      const input = document.getElementById("messageInput");
+      const content = input.value.trim();
+
+      if (!content || !currentUser) return;
+
+      input.disabled = true;
+
+      const username =
+        currentUser.user_metadata?.display_name ||
+        currentUser.email.split("@")[0];
+
+      const { error } = await db
+        .from("chat_messages")
+        .insert({
+          user_id: currentUser.id,
+          username,
+          content
+        });
+
+      input.disabled = false;
+
+      if (error) {
+        alert("Pesan gagal dikirim: " + error.message);
+        return;
+      }
+
+      input.value = "";
+      input.focus();
+    });
+
+  // =================================
+  // REALTIME
+  // =================================
+
+  function subscribeMessages() {
+
+    if (realtimeChannel) {
+      db.removeChannel(realtimeChannel);
+    }
+
+    realtimeChannel = db
+      .channel("public-chat")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages"
+        },
+        (payload) => {
+          addMessage(payload.new);
+          scrollToBottom();
+        }
+      )
+      .subscribe();
+  }
+
+  // =================================
+  // LOGOUT
+  // =================================
+
+  document.getElementById("logoutBtn")
+    .addEventListener("click", async () => {
+
+      if (realtimeChannel) {
+        await db.removeChannel(realtimeChannel);
+        realtimeChannel = null;
+      }
+
+      await db.auth.signOut();
+
+      currentUser = null;
+      messagesBox.replaceChildren();
+
+      chatSection.style.display = "none";
+      authSection.style.display = "block";
+
+      setStatus("Kamu sudah keluar");
+    });
+
+  // =================================
+  // CHECK EXISTING SESSION
+  // =================================
+
+  async function initialize() {
+
+    if (SUPABASE_KEY === "sb_publishable_IepBmSaRF_0CwQSOGn4Anw_gd3KHLE5") {
+      setStatus("Masukkan Publishable Key terlebih dahulu.");
+      return;
+    }
+
+    const { data, error } = await db.auth.getSession();
+
+    if (error) {
+      setStatus("Gagal menghubungkan: " + error.message);
+      return;
+    }
+
+    if (data.session) {
+      showChat(data.session.user);
+    } else {
+      setStatus("Siap! Silakan daftar atau login.");
+    }
+  }
+
+  initialize();
+
+</script>
 
 </body>
 </html>
